@@ -12,3 +12,6 @@ torch
 tqdm==4.64.1
 yacs==0.1.8
 Flask
+tensorflow
+music21
+sklearn

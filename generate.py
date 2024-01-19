@@ -5,22 +5,23 @@ from pathlib import Path
 import yaml
 
 from commu_dset import DSET
-from commu_wrapper import make_midis
+#from commu_wrapper import make_midis
 from musicomb import MusiComb
 import random
 
 def main(args: argparse.Namespace, timestamp: str) -> None:
 
     if args.generate_samples:
-        role_to_midis = make_midis(
-            args.bpm,
-            args.key,
-            args.time_signature,
-            args.num_measures,
-            args.genre,
-            args.rhythm,
-            args.chord_progression,
-            timestamp)
+        pass
+        # role_to_midis = make_midis(
+        #     args.bpm,
+        #     args.key,
+        #     args.time_signature,
+        #     args.num_measures,
+        #     args.genre,
+        #     args.rhythm,
+        #     args.chord_progression,
+        #     timestamp)
     else:
         role_to_midis = DSET.sample_midis(
             args.bpm,

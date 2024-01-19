@@ -9,6 +9,7 @@ import pandas as pd
 import yaml
 import itertools
 from commu_file import CommuFile
+import os
 
 
 class CommuDataset:
@@ -123,6 +124,7 @@ class CommuDataset:
             sample = df_samples[df_samples.index == i]
             role = sample.track_role.item()
             name = f'{role}_{role_counts[role]}'
+            cwd = os.getcwd()
             if role != 'drum':
                 midi = CommuFile(
                     f'dataset/commu_midi/{sample.split.item()}/raw/{sample.id.item()}.mid',

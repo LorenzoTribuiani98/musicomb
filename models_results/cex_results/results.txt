@@ -1,0 +1,11 @@
+accompaniment:
+  - accuracy = 0.751126
+  - f1 score = 0.724336
+
+main melody:
+  - accuracy = 0.629782
+  - f1 score = 0.623483
+
+bass:
+  - accuracy = 0.751407
+  - f1 score = 0.725218

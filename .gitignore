@@ -8,3 +8,5 @@ tutorial
 checkpoint_best.pt
 explore_dset.ipynb
 /dataset/groove_drum/
+/dataset/commu_midi/
+/dataset/new_midis/
