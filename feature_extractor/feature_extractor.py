@@ -8,8 +8,10 @@ from tqdm import tqdm
 from functools import partial
 
 def analyze_midi(inputs, storing_dir=""):
-    file_path, genre = inputs
-    midi_file = MidiInfo(file_path, genre=genre)
+    file_path, genre, instrument = inputs
+    midi_file = MidiInfo(file_path)
+    midi_file.genre = genre
+    midi_file.instrument = instrument
     return midi_file.split_and_sample(storing_dir=storing_dir, to_dict=True)
 
 def analyze_mp(file_paths, storing_dir="", num_workers=8, total_elements=None):
@@ -70,9 +72,10 @@ if __name__ == "__main__":
         for i in range(len(metadata)):
             yield (
                 f"dataset/commu_midi/{metadata['split_data'].iloc[i]}/raw/{metadata['id'].iloc[i]}.mid",
-                metadata["genre"].iloc[i]
+                metadata["genre"].iloc[i],
+                metadata["inst"].iloc[i]
             )
     
-    meta = pd.read_csv("dataset/commu_meta.csv")[:100]
+    meta = pd.read_csv("dataset/commu_meta.csv")
     df = analyze_mp(generator(meta), total_elements=len(meta), storing_dir="dataset/new_midis")
     df.to_csv("dataset/commu_meta_nv.csv")
