@@ -81,7 +81,7 @@ class CommuFile(MidiFile):
 
     def _preprocess(self, name: str, instrument: str) -> None:
         with open('cfg/programs.yaml') as f:
-             inst_to_prog = yaml.safe_load(f)
+            inst_to_prog = yaml.safe_load(f)
         self._move_meta()
         self._set_name(name)
         self._set_program(inst_to_prog[instrument])

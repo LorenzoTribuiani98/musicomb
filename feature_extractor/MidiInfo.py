@@ -1,14 +1,14 @@
 import os
-from music21 import stream, midi, key, tempo, instrument, chord, note, interval, pitch
+from music21 import stream, midi, key, tempo, instrument, chord, note, interval, pitch, tempo
 from typing import Union
 import datetime
-import shutil
+import yaml
 from pprint import pprint
 
 
 class MidiInfo():
     
-    def __init__(self, midi: Union[str, stream.Score], file_name:str = "", genre:str = None, transpose:bool = True, kwargs:dict=None) -> None:
+    def __init__(self, midi: Union[str, stream.Score], file_name:str = "", transpose:bool = True, kwargs:dict=None) -> None:
         
         if type(midi) is str:
             self.__midi_file__ = self.__open_midi(midi)
@@ -24,13 +24,13 @@ class MidiInfo():
                 self.__file_name__ = file_name
             
         if kwargs is None:
-            self.__bpm = self.get_bpm()[0]
-            self.__time_signature = self.get_time_signature()[0]
-            self.__min_vel, self.__max_vel = self.get_min_max_velocity()
-            self.__num_measures = self.number_of_measures()
-            self.__rhythm = self.get_sample_rhythm()
-            self.__key = self.get_audio_key()
-            self.__instrument = self.get_instrument()
+            self.__bpm = self.__get_bpm()[0]
+            self.__time_signature = self.__get_time_signature()[0]
+            self.__min_vel, self.__max_vel = self.__get_min_max_velocity()
+            self.__num_measures = self.__get_number_of_measures()
+            self.__rhythm = self.__get_sample_rhythm()
+            self.__key = self.__get_audio_key()
+            self.__instrument_name, self.__midi_program = self.__get_instrument()
         else:
             self.__bpm = kwargs["bpm"]
             self.__time_signature = kwargs["time_signature"]
@@ -39,19 +39,43 @@ class MidiInfo():
             self.__key = kwargs["key"]
             self.__num_measures = kwargs["num_measures"]
             self.__rhythm = kwargs["rhythm"]
-            self.__instrument = kwargs["instrument"]
+            self.__instrument_name = kwargs["instrument"]
+            self.__midi_program = kwargs["midi_program"]
         
-        self.__genre = genre if genre is not None else -1
+        self.__genre = None
         
         if transpose:
-            self.transpose_to_CAm()
+            self.__transpose_to_CAm()
         
     @property
-    def bpm(self):
+    def bpm(self) -> int:
+        """Beats per Minute
+
+        Returns:
+            int: bpms
+        """
         return self.__bpm
     
+    @bpm.setter
+    def bpm(self, bpm: int) -> None:
+        """set the bpm updating the midi file
+
+        Args:
+            bpm (int): the bpms
+        """
+        for element in self.__midi_file__.recurse():
+            if "MetronomeMark" in element.classes:
+                element.number = bpm
+                
+        self.__bpm = bpm
+    
     @property
-    def time_signature(self):
+    def time_signature(self) -> str:
+        """time signature of the midi file
+
+        Returns:
+            str: time signature
+        """
         return self.__time_signature
     
     @property
@@ -63,19 +87,35 @@ class MidiInfo():
         return self.__max_vel
     
     @property
-    def key(self):
+    def key(self) -> str:
+        """the predicted key of the midi file score
+
+        Returns:
+            str: key signature
+        """
         return str(self.__key).lower().replace(" ", "")
     
+    @key.setter
+    def key(self, key: str):
+        """set the key signature updating the notes and signature of the midi file
+        (transposition could be made only on key with the same mode (major/minor))
+
+        Args:
+            key (str): the name of the key
+        """
+        key = key.lower().replace(" ", "")
+        self.transpose(key)
+    
     @property
-    def num_measures(self):
+    def num_measures(self) -> int:
         return self.__num_measures
     
     @property
-    def rhythm(self):
+    def rhythm(self) -> str:
         return self.__rhythm
     
     @property
-    def genre(self):
+    def genre(self) -> str:
         return self.__genre
     
     @genre.setter
@@ -83,8 +123,32 @@ class MidiInfo():
         self.__genre = genre
         
     @property
-    def instrument(self):
-        return self.__instrument
+    def instrument(self) -> str:
+        return self.__instrument_name
+    
+    @property
+    def midi_program(self) -> int:
+        return self.__midi_program
+    
+    @instrument.setter
+    def instrument(self, instrument_name: str):
+        """set the instrument for the midi updating values
+
+        Args:
+            instrument_name (str): the instrument MIDI name
+        """
+        with open("cfg/programs.yaml", "r") as file:
+            instruments = yaml.safe_load(file)
+        
+        assert instrument_name in instruments.keys(), f"{instrument_name} is not a valid instrument name, try one of {list(instruments.keys())}"
+        
+        for element in self.__midi_file__.recurse():
+            if "Instrument" in element.classes:
+                element.midiProgram = instruments[instrument_name]
+                element.instrumentName = instrument_name
+                
+        self.__midi_program = instruments[instrument_name]
+        self.__instrument_name = instrument_name
         
     @property
     def midi_file(self) -> str:
@@ -93,6 +157,13 @@ class MidiInfo():
     @midi_file.setter
     def midi_file(self, midi_path: str) -> None:
         self.__midi_file__ = self.__open_midi(midi_path)
+        self.__bpm = self.__get_bpm()[0]
+        self.__time_signature = self.__get_time_signature()[0]
+        self.__min_vel, self.__max_vel = self.__get_min_max_velocity()
+        self.__num_measures = self.__get_number_of_measures()
+        self.__rhythm = self.__get_sample_rhythm()
+        self.__key = self.__get_audio_key()
+        self.__instrument_name, self.__midi_program = self.__get_instrument()
         
     @property
     def file_name(self) -> str:
@@ -136,7 +207,7 @@ class MidiInfo():
                     
         return temp
     
-    def get_time_signature(self, allow_multiple: bool = True) -> Union[list, str]:
+    def __get_time_signature(self, allow_multiple: bool = True) -> Union[list, str]:
         """
         Returns the time signature (or a list of time signature) of the passed MIDI file
 
@@ -167,7 +238,7 @@ class MidiInfo():
         
         return self.__remove_duplicates(time_sig)
     
-    def get_bpm(self, allow_multiple: bool = True) -> Union[list, int]:
+    def __get_bpm(self, allow_multiple: bool = True) -> Union[list, int]:
         """
         Returns the bpm (beats per minute) (or a list of bpms) of the passed MIDI file
 
@@ -195,7 +266,7 @@ class MidiInfo():
             
         return self.__remove_duplicates(bpms)
     
-    def number_of_measures(self) -> int:
+    def __get_number_of_measures(self) -> int:
         """Returns the number of measure inside the MIDI file
 
         Returns:
@@ -207,7 +278,7 @@ class MidiInfo():
             
         return max(measures)
     
-    def get_sample_rhythm(self):
+    def __get_sample_rhythm(self):
         
         """return the type of rhythm present in the midi (standard or triplet)
 
@@ -230,7 +301,7 @@ class MidiInfo():
         else:
             return "triplet"
 
-    def get_min_max_velocity(self):
+    def __get_min_max_velocity(self):
         """Return the minimum and maximum value of the velocities"""
         min_vel = float("inf")
         max_vel = float("-inf")
@@ -244,7 +315,7 @@ class MidiInfo():
 
         return (min_vel, max_vel)
 
-    def get_audio_key(self) -> str:
+    def __get_audio_key(self) -> str:
         "return the audio key (if not present tries to analyze the midi to extract it)"
         if self.__midi_file__.keySignature is not None:
             return self.__midi_file__.keySignature
@@ -252,7 +323,7 @@ class MidiInfo():
             key = self.__midi_file__.analyze('key')
             return key
 
-    def list_instruments(self) -> list:
+    def __list_instruments(self) -> list:
         """returns a list of the instrument present"""
         instruments = list()
         for p in self.__midi_file__.parts.stream():
@@ -314,68 +385,18 @@ class MidiInfo():
 
         midi_stream.append(stream.Part(sample_measures))
         return midi_stream 
-    
-    def save(self, storing_dir: str = "") -> None:
-        midi_file = midi.translate.streamToMidiFile(self.__midi_file__)
-        path = os.path.join(
-            storing_dir,
-            self.__file_name__ + ".mid"
-        )                 
-        midi_file.open(path, "wb")
-        midi_file.write()
-        midi_file.close()
         
-    def get_instrument(self):
+    def __get_instrument(self):
         
-        instrument_ = -1
+        instrument_p = -1
+        instrument_n = ""
         for element in self.__midi_file__.recurse():
             if "Instrument" in element.classes:
-                if instrument_ == -1 or instrument_ == None:
-                    instrument_ = element.midiProgram
+                if (instrument_p == -1 or instrument_p == None) and (instrument_n == "" or instrument_n == None):
+                    instrument_p = element.midiProgram
+                    instrument_n = element.instrumentName
                     
-        return instrument_ if instrument_ != None else -1                
-        
-    
-    def split_and_sample(self, save_midis: bool = True, storing_dir="", to_dict=False) -> list:
-        """Search inside the midi stram for repeating sequences and extract the as sample
-
-        Args:
-            save_midis (bool, optional): whether or not to save midis, file will be saved at storing_dir. Defaults to True.
-            storing_dir (str, optinal): the path where to store the sampled midis
-
-        Returns:
-            list: a list of dictionaries containing informations about the sample (len, name, stream)
-        """
-        tracks_info = list()
-        for i, part in enumerate(self.__get_tracks__()):            
-            measures = list(part.recurse().getElementsByClass(stream.Measure))
-            samples = self.__find_repeating_sequences__(
-                [list(measure.notes) for measure in measures]
-            )
-            
-            for j, element in enumerate(samples):                
-                sample_measures = measures[element["measure_index"]-1:element["measure_index"] + element["len"]-1]
-                midi_stream = self.__prepare_midi__(sample_measures, measures) 
-                sample = MidiInfo(
-                    midi_stream, 
-                    file_name=self.__file_name__ + "_" + str(i)+ "_sample" + str(j),
-                )
-                if save_midis:
-                    sample.save(storing_dir)
-                if to_dict:
-                    tracks_info.append(sample.to_dict())
-                else:
-                    tracks_info.append(sample)
-                    
-        if len(tracks_info) == 0:
-            if to_dict:
-                tracks_info.append(self.to_dict())
-            else:
-                tracks_info.append(self)
-            if save_midis:
-                self.save(storing_dir)
-            
-        return tracks_info
+        return (instrument_n, instrument_p) if (instrument_n != "" and instrument_p != None) else ("",-1)                
     
     def __find_repeating_sequences__(self, notes):
         """find repeating sequences of fixed length inside a list of notes
@@ -414,21 +435,73 @@ class MidiInfo():
                     
         return repeating_sequences
     
-    def transpose_to_CAm(self) -> None:
+    def __transpose_to_CAm(self) -> None:
         audio_key_name = str(self.__key).lower().replace(" ", "")
         if audio_key_name != "cmajor" and audio_key_name != "aminor":
             mode = audio_key_name[-5:]
             new_tonic_pitch = "C" if mode == "major" else "A"
             transpose_interval = interval.Interval(self.__key.tonic, pitch.Pitch(new_tonic_pitch))
             self.__midi_file__ = self.__midi_file__.transpose(transpose_interval)
-            self.__key = self.get_audio_key()
+            self.__key = self.__get_audio_key()
             self.__midi_file__.keySignature = self.__key
+    
+    def save(self, storing_dir: str = "") -> None:
+        midi_file = midi.translate.streamToMidiFile(self.__midi_file__)
+        path = os.path.join(
+            storing_dir,
+            self.__file_name__ + ".mid"
+        )                 
+        midi_file.open(path, "wb")
+        midi_file.write()
+        midi_file.close()
+    
+    def split_and_sample(self, save_midis: bool = True, storing_dir="", to_dict=False) -> list:
+        """Search inside the midi stram for repeating sequences and extract the as sample
+
+        Args:
+            save_midis (bool, optional): whether or not to save midis, file will be saved at storing_dir. Defaults to True.
+            storing_dir (str, optinal): the path where to store the sampled midis
+
+        Returns:
+            list: a list of dictionaries containing informations about the sample (len, name, stream)
+        """
+        tracks_info = list()
+        for i, part in enumerate(self.__get_tracks__()):            
+            measures = list(part.recurse().getElementsByClass(stream.Measure))
+            samples = self.__find_repeating_sequences__(
+                [list(measure.notes) for measure in measures]
+            )
+            
+            for j, element in enumerate(samples):                
+                sample_measures = measures[element["measure_index"]-1:element["measure_index"] + element["len"]-1]
+                midi_stream = self.__prepare_midi__(sample_measures, measures) 
+                sample = MidiInfo(
+                    midi_stream, 
+                    file_name=self.__file_name__ + "_" + str(i)+ "_sample" + str(j),
+                )
+                sample.genre = self.__genre
+                if save_midis:
+                    sample.save(storing_dir)
+                if to_dict:
+                    tracks_info.append(sample.to_dict())
+                else:
+                    tracks_info.append(sample)
+                    
+        if len(tracks_info) == 0:
+            if to_dict:
+                tracks_info.append(self.to_dict())
+            else:
+                tracks_info.append(self)
+            if save_midis:
+                self.save(storing_dir)
+            
+        return tracks_info
             
     def to_dict(self) -> dict:
         return {
             "bpm" : self.__bpm,
             "time_signature" : self.__time_signature,
-            "instrument" : self.__instrument,
+            "instrument" : self.__instrument_name,
             "genre" : self.__genre,
             "key" : self.key,
             "min_vel" : self.__min_vel,
@@ -437,4 +510,14 @@ class MidiInfo():
             "num_measures" : self.__num_measures,
             "file_name" : self.__file_name__ + ".mid"
         }
+    
+    def transpose(self, new_key: str):
+        note_ = new_key[:-5]
+        mode = new_key[-5:]
+        assert mode == self.__key.mode, f"midi file mode is {self.__key.mode}, given key mode is {mode}, cannot transpose to different modal key"
+        
+        transpose_interval = interval.Interval(self.__key.tonic, key.Key(note_, mode=mode).tonic)
+        self.__midi_file__ = self.__midi_file__.transpose(transpose_interval)
+        self.__key = self.__get_audio_key()
+        self.__midi_file__.keySignature = self.__key
         
