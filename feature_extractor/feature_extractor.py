@@ -73,6 +73,6 @@ if __name__ == "__main__":
                 metadata["genre"].iloc[i]
             )
     
-    meta = pd.read_csv("dataset/commu_meta.csv")[:100]
+    meta = pd.read_csv("dataset/commu_meta.csv")
     df = analyze_mp(generator(meta), total_elements=len(meta), storing_dir="dataset/new_midis")
     df.to_csv("dataset/commu_meta_nv.csv")
