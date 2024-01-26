@@ -4,7 +4,6 @@ import numpy as np
 from music21 import midi, stream, note, chord
 import multiprocessing as mp
 from typing import Union
-from functools import partial
 from tqdm import tqdm
 from utils.constants import CHORDS
 
@@ -67,7 +66,7 @@ class MModelFinal(tf.keras.Model):
                 )
             ).expect_partial()
         
-    def preprocess(self, file_paths: list, initial_conditions = [], num_workers=1) -> dict:
+    def preprocess(self, file_paths: list, initial_conditions = [[]], num_workers=1) -> dict:
         """Preprocess a series of midi files with optionally multiprocessing
 
         Args:
@@ -79,55 +78,59 @@ class MModelFinal(tf.keras.Model):
             dict: dictionary of features to pass to self.predict
         """
         
-        assert len(initial_conditions) <= 3, "maximum number of chords for initial condition is 3"
+        #assert len(initial_conditions) <= 3, "maximum number of chords for initial condition is 3"
         
         feat_dict = dict()
         reordering_indexes = list()
-        initial_conditions = [CHORDS.index(chord_) for chord_ in initial_conditions]
+        temp = list()
+        for initial_condition in initial_conditions:
+            initial_condition = [CHORDS.index(chord_) for chord_ in initial_condition]
+            
+            if len(initial_condition) == 0:
+                initial_condition = np.zeros((1, 3, 24))
+            else:
+                initial_condition = np.expand_dims(np.eye(24)[initial_condition], axis=0)
+                padding = np.zeros((1, 3 - initial_condition.shape[1], 24))
+                initial_condition = np.concatenate([padding, initial_condition], axis=1)
+                
+            temp.append(initial_condition)   
+            
+        initial_conditions = temp
         
         if num_workers == 1:        
             
-            for file_path in file_paths:
+            for file_path in tqdm(file_paths):
                 
-                pre_feat, features = _instance_preprocess(file_path, initial_conditions=initial_conditions)
+                features = _instance_preprocess(file_path)
                 
                 if features.shape[0] not in feat_dict.keys():
-                    feat_dict[features.shape[0]] = [list(), list()]
+                    feat_dict[features.shape[0]] = list()
                     
-                feat_dict[features.shape[0]][0].append(
-                    pre_feat
-                    )
-                    
-                feat_dict[features.shape[0]][1].append(
+                feat_dict[features.shape[0]].append(
                     np.expand_dims(features, axis=0)
                     )
                 
                 reordering_indexes.append(features.shape[0])
-                
+            
         else:
             with mp.Pool(num_workers) as pool:
-                for pre_feat, features in tqdm(pool.imap(partial(_instance_preprocess, initial_conditions=initial_conditions), iter(file_paths)), total=len(file_paths)):
+                for features in tqdm(pool.imap(_instance_preprocess, iter(file_paths)), total=len(file_paths)):
                     
                     if features.shape[0] not in feat_dict.keys():
-                        feat_dict[features.shape[0]] = [list(), list()]
+                        feat_dict[features.shape[0]] = list()
                         
-                    feat_dict[features.shape[0]][0].append(
-                        pre_feat
-                        )
-                        
-                    feat_dict[features.shape[0]][1].append(
+                    feat_dict[features.shape[0]].append(
                         np.expand_dims(features, axis=0)
                         )
                     
                     reordering_indexes.append(features.shape[0])
         
-        
         for key in feat_dict.keys():
-            feat_dict[key][0] = np.concatenate(feat_dict[key][0], axis=0)
-            feat_dict[key][1] = np.concatenate(feat_dict[key][1], axis=0)
+            feat_dict[key] = np.concatenate(feat_dict[key], axis=0)
         
         
         return {
+            "initial_conditions" : initial_conditions,
             "features" : feat_dict,
             "reordering_indexes" : reordering_indexes
         }
@@ -250,37 +253,47 @@ class MModelFinal(tf.keras.Model):
         assert return_type in ["chords", "one_hot", "logits"], "return_type should be one of [chords, one_hot, logits]"
         
         pred_dict = dict()
-        args = inputs["features"]
+        initial_conditions = inputs["initial_conditions"]
+        feat = inputs["features"]
         reordering_indexes = inputs["reordering_indexes"]
-        predictions = list()
-        for key in args.keys():
-            total_pred = list()
-            
-            for i in range(args[key][1].shape[1]):
-                logits = self((
-                    args[key][0],
-                    args[key][1][:,i,:,:]
-                ))
-                oh_pred = self.__logits_to_one_hot(logits)
-                args[key][0] = oh_pred[:,-3:,:]
-                total_pred.append(logits)
-                
-            total_pred = np.concatenate(total_pred, axis=1)
         
-            if return_type == "chords":
-                pred_dict[key] = self.__logits_to_chords(total_pred)                    
-            if return_type == "one_hot":
-                pred_dict[key] = self.__logits_to_one_hot(total_pred)
-            if return_type == "logits":
-                pred_dict[key] = total_pred
+        pred = list()
+        for initial_condition in initial_conditions:
+            predictions = list()
+            for key in feat.keys():
+                total_pred = list()
+                initial_condition_batched = np.tile(initial_condition,(feat[key].shape[0],1,1))
+                for i in range(feat[key].shape[1]):
+                    logits = self((
+                        initial_condition_batched,
+                        feat[key][:,i,:,:]
+                    ))
+                    oh_pred = self.__logits_to_one_hot(logits)
+                    initial_condition_batched = oh_pred[:,-3:,:]
+                    total_pred.append(logits)
+                    
+                total_pred = np.concatenate(total_pred, axis=1)
+            
+                if return_type == "chords":
+                    pred_dict[key] = self.__logits_to_chords(total_pred)                    
+                if return_type == "one_hot":
+                    pred_dict[key] = self.__logits_to_one_hot(total_pred)
+                if return_type == "logits":
+                    pred_dict[key] = total_pred
 
-        for index in reordering_indexes:
-                predictions.append(
-                    pred_dict[index].pop(0)
-                )
+            for index in reordering_indexes:
+                    predictions.append(
+                        pred_dict[index].pop(0)
+                    )
+                    
+            pred.append(predictions)
                 
-        return predictions
-
+        return pred
+    
+    def process_n_predict(self, file_paths: list, initial_conditions=[[]], num_workers=1, return_type="chords"):
+        
+        features = self.preprocess(file_paths, initial_conditions=initial_conditions, num_workers=num_workers)
+        return self.predict(features, return_type=return_type)
 
 
 #___________PRIVATE_METHODS_FOR_MULTIPROCESSING___________________
@@ -298,7 +311,7 @@ def _open_midi(midi_path: str, remove_drums=True) -> stream.Score:
                     mf.tracks[i].events = [ev for ev in mf.tracks[i].events if ev.channel != 10] 
             return midi.translate.midiFileToStream(mf)
 
-def _instance_preprocess(file: Union[str, stream.Score], initial_conditions = []):
+def _instance_preprocess(file: Union[str, stream.Score]):
         
     """Preprocess the midi file and create the relative entries for the model
 
@@ -345,13 +358,6 @@ def _instance_preprocess(file: Union[str, stream.Score], initial_conditions = []
     new_shape = (features.shape[0]//4, 4, 12)
     features = features.reshape((new_shape))
     
-    if len(initial_conditions) == 0:
-        initial_conditions = np.zeros((1, 3, 24))
-    else:
-        initial_conditions = np.expand_dims(np.eye(24)[initial_conditions], axis=0)
-        padding = np.zeros((1, 3 - initial_conditions.shape[1], 24))
-        initial_conditions = np.concatenate([padding, initial_conditions], axis=1)
-    
-    return initial_conditions, features
+    return features
 
 CHORD_EXTRACTOR = MModelFinal()

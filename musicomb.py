@@ -5,17 +5,20 @@ import random
 import yaml
 from ortools.sat.python import cp_model
 
-from commu_file import CommuFile, merge, inner_merge
+#from commu_file import CommuFile, merge, inner_merge
 import mido
 import copy
+from midi_utlis import Track, Score
+from pprint import pprint
 
 class MusiComb():
 
-    def __init__(self, role_to_midis: Dict[str, List[CommuFile]], timestamp: str, bpm, time_signature, num_measures, genre, music_length) -> None:
-        self.music_length = music_length * 60000 # in milliseconds
+    def __init__(self, role_to_midis: Dict[str, List[Track]], timestamp: str, bpm, time_signature, num_measures, genre, music_length) -> None:
+        self.music_length = music_length * 60000
         self.genre = genre
         self.bar_duration = self.calculate_bar_duration(int(bpm), int(time_signature[0]), int(num_measures))
         self.drum_midies = []
+        #self.music_length = (round((music_length * 60000) / self.bar_duration) + 1) * self.bar_duration 
 
         self.role_to_midis = role_to_midis
         self.correct_tempo()
@@ -142,13 +145,13 @@ class MusiComb():
         tempo_count = {}
         for role, midis in self.role_to_midis.items():
             for midi in midis:
-                tempo_count[midi.getTempo()] = tempo_count.get(midi.getTempo(), 0) + 1
+                tempo_count[midi.bpm] = tempo_count.get(midi.bpm, 0) + 1
 
         most_frequent_tempo = max(tempo_count, key=tempo_count.get)
         for role, midis in self.role_to_midis.items():
             if role == 'drum':
                 for midi in midis:
-                    midi.setTempo(most_frequent_tempo)
+                    midi.bpm = most_frequent_tempo
 
     def solve(self) -> None:
         solver = cp_model.CpSolver()
@@ -157,10 +160,11 @@ class MusiComb():
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             shifted_midis = []
             role_to_shifted_midi = defaultdict()
+
             for role, midis in self.role_to_midis.items():
                     for i, midi in enumerate(midis):
                         suffix = f'{role}_{i}' # e.x : pad_0
-                        for j in range(len(self.role_to_repeats[suffix])):
+                        for j in range(len(self.role_to_repeats[suffix])):                            
                             if solver.Value(self.role_to_repeats[suffix][j]):
                                 shifted_midi = midi.shift(solver.Value(self.role_to_tracks[suffix][j].start))
                                 if suffix in role_to_shifted_midi:
@@ -169,20 +173,16 @@ class MusiComb():
                                     role_to_shifted_midi[suffix] = [shifted_midi]
                                 shifted_midis.append(shifted_midi)
                                 if (role == 'drum') and (j in [0, 1]):
-                                    print(shifted_midi.track)
-
-
+                                    pass#print(shifted_midi.track)
             merged_tracks = []
             for role, tracks_of_same_role in role_to_shifted_midi.items():
-                inner_merged = inner_merge(tracks_of_same_role, self.music_length)
+                inner_merged = Score.inner_merge(tracks_of_same_role, self.music_length)
                 merged_tracks.append(inner_merged)
 
-
-
-            merged = merge(merged_tracks)
-            old_merged_version = merge(shifted_midis)
-            merged.save(f'out/{self.timestamp}/tune.mid')
-            old_merged_version.save(f'out/{self.timestamp}/tune_notmerged_sounds.mid')
+            score = Score(merged_tracks)
+            #old_merged_version = merge(shifted_midis)
+            score.save(f'out/{self.timestamp}/')
+            #old_merged_version.save(f'out/{self.timestamp}/')
 
         elif status == cp_model.INFEASIBLE:
             print(f'No solution found: the problem was proven infeasible')

@@ -138,3 +138,16 @@ CHORD_TRIADS = {
     "B" : ["B", "D#", "F#"],
     "Bm" : ["B", "D", "F#"],
 }
+
+INITIAL_STATES = [
+    [],                # base condition
+    ["Am", "F", "G"],  # I-vi-IV-V
+    ["G", "Am", "F"],  # I-V-vi-IV
+    ["C", "F", "G"],   # I-IV-V
+    ["G", "F", "E"],   # vi-V-IV-III
+    ["Am", "Em", "F"], # I-V-vi-iii-IV
+    ["Dm", "G", "C"],  # ii-V-I
+    ["C", "A#", "C"],  # I-VIIb-I
+    ["Am", "Em", "F"], # I-vi-iii-IV
+    ["F", "C", "G"]    # vi-IV-I-V
+]

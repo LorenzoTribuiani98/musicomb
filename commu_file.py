@@ -35,6 +35,12 @@ class CommuFile(MidiFile):
                 message.tempo = tempo
     @property
     def duration(self) -> int:
+        beats_per_bar = 0
+        for message in self.track:
+            if message.type == 'time_signature':
+                beats_per_bar = message.numerator
+        bar_len = beats_per_bar * self.ticks_per_beat
+
         current_tempo = 500000  # Default MIDI tempo (120 BPM)
         total_time_in_ticks = 0
         total_time_in_seconds = 0
@@ -46,10 +52,19 @@ class CommuFile(MidiFile):
                 total_time_in_ticks = 0  # Reset the tick count for the new tempo segment
                 current_tempo = message.tempo
             total_time_in_ticks += message.time
-
+        
+        bar_len_milliseconds = int(tick2second(bar_len, self.ticks_per_beat,current_tempo) * 1000)
         # Convert the remaining ticks to time
         total_time_in_seconds += tick2second(total_time_in_ticks, self.ticks_per_beat, current_tempo)
         return int(total_time_in_seconds * 1000)
+        error = int(total_time_in_seconds * 1000)/bar_len_milliseconds
+        fp_error = error - int(error)
+        if fp_error > 0.5:
+            num_bars = int(error) + 1
+        else:
+            num_bars = int(error)
+        return int(num_bars * bar_len_milliseconds)
+        
 
     def shift(self, time: int) -> CommuFile:
         """

@@ -129,20 +129,27 @@ INPUT_FORM = """
 # Route for handling the input form
 @app.route('/', methods=['GET', 'POST'])
 def home():
-    with open('cfg/metadata.yaml') as f:
+    with open('cfg/metadata_nv.yaml') as f:
         cfg = yaml.safe_load(f)
 
-    main_df = pd.read_csv('dataset/concatenated_df.csv', sep='\t')
+    main_df = pd.read_csv('dataset/concatenated_df_nv.csv')
     df = clean_chord_progression(main_df)
     df = df[df['track_role'] != 'drum']
     music_length_options = {'1:00': 1, '2:00': 2, '3:00': 3, '4:00': 4, '5:00':5, '10:00': 10}
     bpm_options = sorted(df['bpm'].unique())
-    key_options = sorted(df['audio_key'].unique())
+    key_options = sorted(df['key'].unique())
     time_signature_options = ['4/4']
     num_measures_options = [8]
     genre_options = sorted(main_df['genre'].unique())
     rhythm_options = ['standard']
-    chord_progression_options = sorted(cfg['chord_progression'])
+    
+    unique_cp = main_df['chord_progression'].unique()   
+    samples_per_cp = {}
+    for cp in unique_cp:
+      samples_per_cp[cp] = len(main_df[main_df['chord_progression'] == cp])
+    
+    del samples_per_cp["[null]"]  
+    chord_progression_options = list(dict(sorted(samples_per_cp.items(), key=lambda item: item[1], reverse=True)).keys())
 
     if request.method == 'POST':
         # Extract the form values
@@ -181,9 +188,8 @@ def home():
                                   chord_progression_options=chord_progression_options)
 
 def clean_chord_progression(df):
-        df.chord_progressions = df.chord_progressions.apply(
-            lambda cp: str([key for key, _ in groupby(cp[2:-2].replace('\'', '').split(', '))]
-                )[1:-1].replace('\'', '').replace(', ', '-'))
+        df.chord_progression = df.chord_progression.apply(
+            lambda cp: cp[1:-1].replace("\'", "").replace(", ", "-"))
         return df
 
 # Run the app
