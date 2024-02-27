@@ -6,7 +6,7 @@ import multiprocessing as mp
 from typing import Union
 from functools import partial
 from tqdm import tqdm
-from utils.constants import CHORDS
+from feature_extractor.utils.constants import CHORDS
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'  # removes unwanted info about tf CPU operations
 

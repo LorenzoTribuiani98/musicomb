@@ -100,7 +100,7 @@ class SVMClassifier:
             
         return np.array(features)
     
-    def __preprocess__in(self, midi) -> dict:
+    def preprocess__in(self, midi) -> dict:
         min_octave = float("inf")
         max_octave = float("-inf")
         octaves = list()
