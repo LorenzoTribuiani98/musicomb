@@ -7,7 +7,6 @@ import yaml
 from commu_dset import DSET
 #from commu_wrapper import make_midis
 from musicomb import MusiComb
-import random
 
 def main(args: argparse.Namespace, timestamp: str) -> None:
 
@@ -31,13 +30,30 @@ def main(args: argparse.Namespace, timestamp: str) -> None:
             args.genre,
             args.rhythm,
             args.chord_progression)
-
+    
     MusiComb(role_to_midis, timestamp, args.bpm, args.time_signature, args.num_measures, args.genre, args.music_length).solve()
 
 
 if __name__ == '__main__':
-    with open('cfg/metadata.yaml') as f:
+    with open('cfg/metadata_nv.yaml') as f:
         meta = yaml.safe_load(f)
+        
+    # now = datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
+    # Path(f'out/{now}').mkdir(parents=True)
+    # # with open(f'out/{now}/metadata.yaml', 'w') as f:
+    # #     yaml.dump(vars(args), f)
+
+    # main({
+    #     "key" : "aminor",
+    #     "bpm" : 90,
+    #     "time_signature" : "4/4",
+    #     "num_measures" : 8,
+    #     "genre" : "cinematic",
+    #     "rhythm" : "standard",
+    #     "chord_progression" : "Am-G-F-C-Dm-Am-A#-Am",
+    #     "generate_samples" : False,
+    #     "music_length" : 2
+    #     }, now)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -101,3 +117,4 @@ if __name__ == '__main__':
         yaml.dump(vars(args), f)
 
     main(args, now)
+

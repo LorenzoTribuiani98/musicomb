@@ -7,16 +7,16 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import yaml
-import itertools
 from commu_file import CommuFile
 import os
+from midi_utlis import Track
 
 
 class CommuDataset:
 
     def __init__(self) -> None:
         #self.df = pd.read_csv('dataset/commu_meta.csv')
-        self.df = pd.read_csv('dataset/concatenated_df.csv', sep='\t')
+        self.df = pd.read_csv('dataset/concatenated_df_nv.csv')
         self._preprocess()
 
         with open('cfg/chord_progressions.yaml') as f:
@@ -81,7 +81,7 @@ class CommuDataset:
             num_measures: int,
             genre: str,
             rhythm: str,
-            chord_progression: str) -> Dict[str, List[CommuFile]]:
+            chord_progression: str) -> Dict[str, List[Track]]:
         df_samples = self._get_sample_foreach_role(
             bpm,
             key,
@@ -95,7 +95,7 @@ class CommuDataset:
         valid_roles = set(df_samples.track_role.unique())
         midi_count = len(df_samples)
         indexes = df_samples.index.tolist()
-        while midi_count < len(self.get_track_roles()):
+        while midi_count < len(self.get_track_roles()): 
             try:
                 role = random.choice(list(valid_roles))
                 sample = self._get_sample(
@@ -126,15 +126,18 @@ class CommuDataset:
             name = f'{role}_{role_counts[role]}'
             cwd = os.getcwd()
             if role != 'drum':
-                midi = CommuFile(
-                    f'dataset/commu_midi/{sample.split.item()}/raw/{sample.id.item()}.mid',
-                    name,
-                    sample.instrument.item())
+                midi = Track(
+                    f"dataset/new_midis/{sample.file_name.item()}", #f'dataset/commu_midi/{sample.split.item()}/raw/{sample.id.item()}.mid',
+                    name)
+                    #sample.instrument.item())
+                midi.bpm = bpm
             else:
-                midi = CommuFile(
-                    f'dataset/groove_drum/{sample.id.item()}',
+                midi = Track(
+                    f'dataset/groove_drum/{sample.file_name.item()}',
                     name,
-                    sample.instrument.item())
+                    is_drum=True)
+                    #sample.instrument.item())
+                midi.bpm = bpm
             role_counts[role] += 1
             role_to_midis[role].append(midi)
 
@@ -176,8 +179,8 @@ class CommuDataset:
         # AFTER:
         # 'Am-C-G-Dm-Am-C-G-D'
         self.df.chord_progression = self.df.chord_progression.apply(
-            lambda cp: str([key for key, _ in groupby(cp[2:-2].replace('\'', '').split(', '))]
-                )[1:-1].replace('\'', '').replace(', ', '-'))
+            lambda cp: cp[1:-1].replace("\'", "").replace(", ", "-")
+        )
 
 
     def _get_sample(
@@ -190,7 +193,8 @@ class CommuDataset:
             rhythm: str) -> pd.DataFrame:
         return self.df[
             (self.df.track_role == track_role) &
-            (self.df.bpm == bpm) &
+            (bpm - 10 <= self.df.bpm) &
+            (bpm + 10 >= self.df.bpm) &
             (self.df.key == key) &
             (self.df.time_signature == time_signature) &
             (self.df.num_measures == num_measures) &
@@ -211,7 +215,8 @@ class CommuDataset:
 
         df_query = self.df[
             (self.df.track_role != 'drum') &
-            (self.df.bpm == bpm) &
+            (bpm - 10 <= self.df.bpm) &
+            (bpm + 10 >= self.df.bpm) &
             (self.df.key == key) &
             (self.df.time_signature == time_signature) &
             (self.df.num_measures == num_measures) &
@@ -263,13 +268,13 @@ class CommuDataset:
 
     def _preprocess(self) -> None:
         self.df.drop(columns=self.df.columns[0], inplace=True)
-        self.df.rename(columns={
-            'audio_key': 'key',
-            'chord_progressions': 'chord_progression',
-            'inst': 'instrument',
-            'sample_rhythm': 'rhythm',
-            'split_data': 'split'
-        }, inplace=True)
+        # self.df.rename(columns={
+        #     'audio_key': 'key',
+        #     'chord_progressions': 'chord_progression',
+        #     'inst': 'instrument',
+        #     'sample_rhythm': 'rhythm',
+        #     'split_data': 'split'
+        # }, inplace=True)
         self._clean_chord_progression()
 
     def _sample(self, target: str, track_role: str, split: str | None = None, weighted: bool = False) -> Any:

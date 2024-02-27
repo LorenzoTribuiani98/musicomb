@@ -63,6 +63,7 @@ music_length:
   - 10
 chord_progression:
   - 'none'
+  - Am-C-G-C
   - Am-Am7-F-Am-Adim-Asus4-Am-A#maj7
   - C-F-Am-G-C-F-Am-G
   - C-F-C-F-Am-G-F

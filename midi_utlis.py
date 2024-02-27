@@ -3,15 +3,16 @@ from music21 import stream, midi, key, tempo, instrument, chord, note, interval,
 from typing import Union
 import datetime
 import yaml
-from pprint import pprint
+from copy import deepcopy
+import random
 
 
-class MidiInfo():
+class Track:
     
-    def __init__(self, midi: Union[str, stream.Score], file_name:str = "", transpose:bool = True, kwargs:dict=None) -> None:
+    def __init__(self, midi: Union[str, stream.Score], file_name:str = "", transpose:bool = True, is_drum=False, kwargs:dict=None) -> None:
         
         if type(midi) is str:
-            self.__midi_file__ = self.__open_midi(midi)
+            self.__midi_file__ = self.__open_midi(midi, remove_drums=not is_drum)
             if file_name == "":
                 self.__file_name__, _ = os.path.splitext(os.path.split(midi)[1])
             else:
@@ -19,23 +20,30 @@ class MidiInfo():
         elif type(midi) is stream.Score:
             self.__midi_file__ = midi
             if file_name == "":
-                self.__file_name__, _ = "midi_" + datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
+                self.__file_name__ = "midi_" + datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S') + str(random.randint(0,1000))
             else:
                 self.__file_name__ = file_name
-            
+                
+        self.__is_drum = is_drum
+        
         if kwargs is None:
             self.__bpm = self.__get_bpm()[0]
             self.__time_signature = self.__get_time_signature()[0]
             self.__min_vel, self.__max_vel = self.__get_min_max_velocity()
             self.__num_measures = self.__get_number_of_measures()
             self.__rhythm = self.__get_sample_rhythm()
-            self.__key = self.__get_audio_key()
+            self.__duration = self.__get_duration()
+            if not is_drum:
+                self.__key = self.__get_audio_key()
+            else:
+                self.__key = None
             self.__instrument_name, self.__midi_program = self.__get_instrument()
         else:
             self.__bpm = kwargs["bpm"]
             self.__time_signature = kwargs["time_signature"]
             self.__min_vel = kwargs["min_vel"]
             self.__max_vel = kwargs["max_vel"]
+            self.__is_drum = kwargs["is_drum"]
             self.__key = kwargs["key"]
             self.__num_measures = kwargs["num_measures"]
             self.__rhythm = kwargs["rhythm"]
@@ -44,7 +52,7 @@ class MidiInfo():
         
         self.__genre = None
         
-        if transpose:
+        if transpose and not is_drum:
             self.__transpose_to_CAm()
         
     @property
@@ -68,6 +76,7 @@ class MidiInfo():
                 element.number = bpm
                 
         self.__bpm = bpm
+        self.__duration = self.__get_duration()
     
     @property
     def time_signature(self) -> str:
@@ -162,7 +171,10 @@ class MidiInfo():
         self.__min_vel, self.__max_vel = self.__get_min_max_velocity()
         self.__num_measures = self.__get_number_of_measures()
         self.__rhythm = self.__get_sample_rhythm()
-        self.__key = self.__get_audio_key()
+        if not self.__is_drum:
+            self.__key = self.__get_audio_key()
+        else:
+            self.__key = None    
         self.__instrument_name, self.__midi_program = self.__get_instrument()
         
     @property
@@ -173,7 +185,17 @@ class MidiInfo():
     def file_name(self, file_name: str) -> None:
         self.__file_name__ = file_name
         
-    def __open_midi(self, midi_path, remove_drums=True) -> stream.Score:
+    @property
+    def duration(self):
+        return self.__duration
+    
+    def __get_duration(self):
+        total_beats = self.__midi_file__.duration.quarterLength
+        sec_per_beat = 60 / self.__bpm 
+        total_duration_sec = total_beats * sec_per_beat
+        return int(total_duration_sec* 1000)
+    
+    def __open_midi(self, midi_path, remove_drums=False) -> stream.Score:
         if midi_path is None:
             return None
         else:
@@ -322,14 +344,6 @@ class MidiInfo():
         else:
             key = self.__midi_file__.analyze('key')
             return key
-
-    def __list_instruments(self) -> list:
-        """returns a list of the instrument present"""
-        instruments = list()
-        for p in self.__midi_file__.parts.stream():
-            if p is not None:
-                instruments.append(p.partName)
-        return instruments
     
     def __get_tracks__(self) -> list:
         """Get individual tracks in midi stram
@@ -446,14 +460,13 @@ class MidiInfo():
             self.__midi_file__.keySignature = self.__key
     
     def save(self, storing_dir: str = "") -> None:
-        midi_file = midi.translate.streamToMidiFile(self.__midi_file__)
-        path = os.path.join(
-            storing_dir,
-            self.__file_name__ + ".mid"
-        )                 
-        midi_file.open(path, "wb")
-        midi_file.write()
-        midi_file.close()
+        self.__midi_file__.write(
+            'midi',
+            fp=os.path.join(
+                storing_dir,
+                self.__file_name__ + ".mid"
+            )
+        )
     
     def split_and_sample(self, save_midis: bool = True, storing_dir="", to_dict=False) -> list:
         """Search inside the midi stram for repeating sequences and extract the as sample
@@ -520,4 +533,164 @@ class MidiInfo():
         self.__midi_file__ = self.__midi_file__.transpose(transpose_interval)
         self.__key = self.__get_audio_key()
         self.__midi_file__.keySignature = self.__key
+        
+    def shift(self, milliseconds):
+        
+        if milliseconds == 0:
+            return deepcopy(self)
+        
+        milliseconds_per_beat = (60 / self.__bpm)*1000
+        shifting_beats = milliseconds / milliseconds_per_beat
+        non_integer_beat = shifting_beats - int(shifting_beats)
+        shifting_beats = int(shifting_beats)
+        if non_integer_beat > 0.5:
+            shifting_beats += 1
+        beats_per_measure = int(self.__time_signature[0][0])
+        
+        shifted = deepcopy(self)
+        
+        for part in shifted.midi_file.parts:
+            for element in part.elements:
+                if type(element) == stream.Measure:
+                    element.offset += shifting_beats
+                    element.number = int((element.offset / beats_per_measure) + 1) 
+                    
+        return shifted
+    
+
+class Score:
+    
+    def __init__(self, tracks: Union[stream.Score, list[Track], None]):
+        
+        if type(tracks) == list:
+            self.__tracks = tracks
+        elif type(tracks) == stream.Score:
+            self.__tracks = self.__score_to_tracks(tracks)
+        else:
+            self.__tracks = []
+            
+        self.__track_number = len(self.__tracks)
+        self.__bpm = self.__get_bpm()
+        self.__key = self.__get_key()
+        self.__time_signature = self.__get_time_signature()
+        self.__instruments = [track.instrument for track in self.__tracks]
+        self.__num_measures = max([track.num_measures for track in self.__tracks])
+    
+    def __open_midi(self, midi_path, remove_drums=False) -> stream.Score:
+        if midi_path is None:
+            return None
+        else:
+            mf = midi.MidiFile()
+            mf.open(midi_path)
+            mf.read()
+            mf.close()
+            if (remove_drums):
+                for i in range(len(mf.tracks)):
+                    mf.tracks[i].events = [ev for ev in mf.tracks[i].events if ev.channel != 10]          
+
+            ms = midi.translate.midiFileToStream(mf) 
+            return ms
+            
+    def __score_to_tracks(self, tracks: stream.Score) -> list[Track]:
+        
+        final_tracks = []
+        for i, part in enumerate(tracks.parts):
+            score = stream.Score()
+            score.insert(0, part)
+            final_tracks.append(
+                Track(score, file_name=f"track_{i}")
+            )
+            
+        return final_tracks
+    
+    def __get_bpm(self):
+        
+        bpms = [track.bpm for track in self.__tracks]
+        
+        if all([bpm == bpms[0] for bpm in bpms]):
+            return self.__tracks[0].bpm
+        else:
+            most_present_bpm = max(set(bpms), key=bpms.count)
+            for track in self.__tracks:
+                track.bpm = most_present_bpm
+                
+            return most_present_bpm
+        
+    def __get_key(self):
+        
+        signatures = [track.key for track in self.__tracks if track is not None] 
+        
+        if all([key_ == signatures[0] for key_ in signatures]):
+            return signatures[0]
+        else:
+            most_present_key = max(set(signatures), key=signatures.count)
+            for track in self.__tracks:
+                track.key = most_present_key
+            return most_present_key
+        
+    def __get_time_signature(self):
+        
+        signatures = [track.time_signature for track in self.__tracks]
+        
+        if all([ts == signatures[0] for ts in signatures]):
+            return signatures[0]
+        else:
+            raise AttributeError(f"All time signature in tracks should be the same, but found time signatures {set(signatures)}")
+    
+    @staticmethod
+    def inner_merge(tracks: list[Track], is_drum: bool) -> Track:
+        
+        merged_track = stream.Score()
+        total_part = stream.Part()
+        
+        last_measure_number = 0
+        for track in tracks:
+            bpb = int(track.time_signature[0])
+            for part in track.midi_file.parts:
+                for element in part:
+                    if type(element) == stream.Measure:                    
+                        if last_measure_number < element.number - 1:
+                            for i in range(last_measure_number, element.number-1):
+                                measure = stream.Measure(number=i+1)
+                                measure.offset = i*bpb
+                                if i==0:
+                                    measure.append(
+                                        tempo.MetronomeMark(number=track.bpm)
+                                    )
+                                measure.append(note.Rest(bpb))
+                                total_part.append(measure)
+                            last_measure_number = element.number - 1
+                        if last_measure_number == element.number:
+                            total_part.remove(total_part.elements[-1])
+
+                        total_part.append(element)
+                        last_measure_number = element.number
+                        
+        merged_track.insert(0, total_part)
+        mf = Track(merged_track, is_drum=is_drum)
+        
+        return mf
+        
+    def tanspose(self, new_key: str) -> None:
+        
+        for track in self.__tracks:
+            if not track.is_drum:
+                track.transpose(new_key)
+                
+        self.__key = new_key      
+
+    def save(self, storing_dir: str=""):
+        merged = stream.Score()
+        
+        for track in self.__tracks:
+            for part in track.midi_file.parts:
+                merged.insert(0, part)
+                
+        merged.write(
+            'midi',
+            fp=os.path.join(
+                storing_dir,
+                "tune.mid"
+            )
+        )
         
